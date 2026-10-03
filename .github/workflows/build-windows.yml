@@ -15,90 +15,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install dependencies
         run: npm install
 
-      - name: Build web application
+      - name: Build application
         run: npm run build
 
       - name: Install Electron
         run: npm install --save-dev electron electron-builder
 
-      - name: Create Electron main process
+      - name: Create Electron main file
         shell: pwsh
         run: |
           @'
           const { app, BrowserWindow, dialog } = require('electron');
           const path = require('path');
-          const fs = require('fs');
 
           const PORT = 47821;
-
-          function getConfigPath() {
-            return path.join(app.getPath('userData'), 'config.json');
-          }
-
-          function loadApiKey() {
-            try {
-              const file = getConfigPath();
-
-              if (fs.existsSync(file)) {
-                const config = JSON.parse(fs.readFileSync(file, 'utf8'));
-
-                if (config.geminiApiKey) {
-                  return config.geminiApiKey;
-                }
-              }
-            } catch (e) {
-              console.error(e);
-            }
-
-            return '';
-          }
-
-          function saveApiKey(key) {
-            const dir = app.getPath('userData');
-
-            if (!fs.existsSync(dir)) {
-              fs.mkdirSync(dir, { recursive: true });
-            }
-
-            fs.writeFileSync(
-              getConfigPath(),
-              JSON.stringify({ geminiApiKey: key }, null, 2),
-              'utf8'
-            );
-          }
-
-          async function askForApiKey() {
-            const currentKey = loadApiKey();
-
-            if (currentKey) {
-              return currentKey;
-            }
-
-            const result = await dialog.showMessageBox({
-              type: 'info',
-              buttons: ['OK'],
-              title: 'Somoy Sutra AI News Editor',
-              message: 'Gemini API Key প্রয়োজন',
-              detail:
-                'প্রথমবার চালু করার আগে আপনার Gemini API Key সেট করতে হবে।'
-            });
-
-            return '';
-          }
 
           async function waitForServer() {
             for (let i = 0; i < 60; i++) {
               try {
-                const response = await fetch(`http://127.0.0.1:${PORT}/api/health`);
+                const response = await fetch(
+                  `http://127.0.0.1:${PORT}/api/health`
+                );
 
-                if (response.ok) {
-                  return true;
-                }
+                if (response.ok) return true;
               } catch (e) {}
 
               await new Promise(resolve => setTimeout(resolve, 500));
@@ -111,13 +54,9 @@ jobs:
             process.env.NODE_ENV = 'production';
             process.env.PORT = String(PORT);
 
-            const apiKey = loadApiKey();
-
-            if (apiKey) {
-              process.env.GEMINI_API_KEY = apiKey;
-            }
-
-            await import(path.join(__dirname, 'dist', 'server.js'));
+            await import(
+              path.join(__dirname, 'dist', 'server.js')
+            );
           }
 
           async function createWindow() {
@@ -126,7 +65,9 @@ jobs:
               height: 900,
               minWidth: 1100,
               minHeight: 700,
+
               autoHideMenuBar: true,
+
               webPreferences: {
                 contextIsolation: true,
                 nodeIntegration: false
@@ -145,7 +86,9 @@ jobs:
               return;
             }
 
-            await win.loadURL(`http://127.0.0.1:${PORT}`);
+            await win.loadURL(
+              `http://127.0.0.1:${PORT}`
+            );
           }
 
           app.whenReady().then(async () => {
@@ -166,60 +109,69 @@ jobs:
           });
           '@ | Set-Content -Path main.cjs -Encoding UTF8
 
-      - name: Create Electron package configuration
+      - name: Configure Electron Builder
         shell: pwsh
         run: |
           node -e "
-          const fs=require('fs');
-          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+          const fs = require('fs');
 
-          p.main='main.cjs';
+          const p = JSON.parse(
+            fs.readFileSync('package.json', 'utf8')
+          );
 
-          p.scripts={
+          p.main = 'main.cjs';
+
+          p.scripts = {
             ...p.scripts,
-            'electron:build':'electron-builder --win'
+            'electron:build': 'electron-builder --win'
           };
 
-          p.build={
-            appId:'com.somoysutra.newseditor',
-            productName:'Somoy Sutra AI News Editor',
-            directories:{
-              output:'release'
+          p.build = {
+            appId: 'com.somoysutra.newseditor',
+            productName: 'Somoy Sutra AI News Editor',
+
+            directories: {
+              output: 'release'
             },
-            files:[
+
+            files: [
               'dist/**/*',
               'main.cjs',
               'package.json',
               'node_modules/**/*'
             ],
-            win:{
-              target:[
+
+            win: {
+              target: [
                 {
-                  target:'nsis',
-                  arch:['x64']
+                  target: 'nsis',
+                  arch: ['x64']
                 },
                 {
-                  target:'portable',
-                  arch:['x64']
+                  target: 'portable',
+                  arch: ['x64']
                 }
-              ],
-              artifactName:'Somoy-Sutra-AI-News-Editor-${version}-${arch}.${ext}'
+              ]
             },
-            nsis:{
-              oneClick:false,
-              allowToChangeInstallationDirectory:true,
-              createDesktopShortcut:true,
-              createStartMenuShortcut:true
+
+            nsis: {
+              oneClick: false,
+              allowToChangeInstallationDirectory: true,
+              createDesktopShortcut: true,
+              createStartMenuShortcut: true
             }
           };
 
-          fs.writeFileSync('package.json',JSON.stringify(p,null,2));
+          fs.writeFileSync(
+            'package.json',
+            JSON.stringify(p, null, 2)
+          );
           "
 
       - name: Build Windows EXE
         run: npm run electron:build
 
-      - name: Upload EXE files
+      - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
           name: Somoy-Sutra-Windows
