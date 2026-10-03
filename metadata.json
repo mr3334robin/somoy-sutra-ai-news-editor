@@ -1,0 +1,6 @@
+{
+  "name": "সময়সূত্র — Somoy Sutra AI News Editor",
+  "description": "পেশাদার ও তথ্যভিত্তিক বাংলা সংবাদ সম্পাদক, এসইও অপটিমাইজার ও ব্লগার পাবলিশিং প্ল্যাটফর্ম",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
