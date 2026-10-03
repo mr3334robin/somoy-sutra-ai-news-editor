@@ -1,0 +1,226 @@
+name: Build Somoy Sutra Windows EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Install Electron
+        run: npm install --save-dev electron electron-builder
+
+      - name: Create Electron main process
+        shell: pwsh
+        run: |
+          @'
+          const { app, BrowserWindow, dialog } = require('electron');
+          const path = require('path');
+          const fs = require('fs');
+
+          const PORT = 47821;
+
+          function getConfigPath() {
+            return path.join(app.getPath('userData'), 'config.json');
+          }
+
+          function loadApiKey() {
+            try {
+              const file = getConfigPath();
+
+              if (fs.existsSync(file)) {
+                const config = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+                if (config.geminiApiKey) {
+                  return config.geminiApiKey;
+                }
+              }
+            } catch (e) {
+              console.error(e);
+            }
+
+            return '';
+          }
+
+          function saveApiKey(key) {
+            const dir = app.getPath('userData');
+
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+
+            fs.writeFileSync(
+              getConfigPath(),
+              JSON.stringify({ geminiApiKey: key }, null, 2),
+              'utf8'
+            );
+          }
+
+          async function askForApiKey() {
+            const currentKey = loadApiKey();
+
+            if (currentKey) {
+              return currentKey;
+            }
+
+            const result = await dialog.showMessageBox({
+              type: 'info',
+              buttons: ['OK'],
+              title: 'Somoy Sutra AI News Editor',
+              message: 'Gemini API Key প্রয়োজন',
+              detail:
+                'প্রথমবার চালু করার আগে আপনার Gemini API Key সেট করতে হবে।'
+            });
+
+            return '';
+          }
+
+          async function waitForServer() {
+            for (let i = 0; i < 60; i++) {
+              try {
+                const response = await fetch(`http://127.0.0.1:${PORT}/api/health`);
+
+                if (response.ok) {
+                  return true;
+                }
+              } catch (e) {}
+
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            return false;
+          }
+
+          async function startServer() {
+            process.env.NODE_ENV = 'production';
+            process.env.PORT = String(PORT);
+
+            const apiKey = loadApiKey();
+
+            if (apiKey) {
+              process.env.GEMINI_API_KEY = apiKey;
+            }
+
+            await import(path.join(__dirname, 'dist', 'server.js'));
+          }
+
+          async function createWindow() {
+            const win = new BrowserWindow({
+              width: 1440,
+              height: 900,
+              minWidth: 1100,
+              minHeight: 700,
+              autoHideMenuBar: true,
+              webPreferences: {
+                contextIsolation: true,
+                nodeIntegration: false
+              }
+            });
+
+            const ready = await waitForServer();
+
+            if (!ready) {
+              dialog.showErrorBox(
+                'Somoy Sutra',
+                'Local server চালু করা সম্ভব হয়নি।'
+              );
+
+              app.quit();
+              return;
+            }
+
+            await win.loadURL(`http://127.0.0.1:${PORT}`);
+          }
+
+          app.whenReady().then(async () => {
+            await startServer();
+            await createWindow();
+
+            app.on('activate', () => {
+              if (BrowserWindow.getAllWindows().length === 0) {
+                createWindow();
+              }
+            });
+          });
+
+          app.on('window-all-closed', () => {
+            if (process.platform !== 'darwin') {
+              app.quit();
+            }
+          });
+          '@ | Set-Content -Path main.cjs -Encoding UTF8
+
+      - name: Create Electron package configuration
+        shell: pwsh
+        run: |
+          node -e "
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('package.json','utf8'));
+
+          p.main='main.cjs';
+
+          p.scripts={
+            ...p.scripts,
+            'electron:build':'electron-builder --win'
+          };
+
+          p.build={
+            appId:'com.somoysutra.newseditor',
+            productName:'Somoy Sutra AI News Editor',
+            directories:{
+              output:'release'
+            },
+            files:[
+              'dist/**/*',
+              'main.cjs',
+              'package.json',
+              'node_modules/**/*'
+            ],
+            win:{
+              target:[
+                {
+                  target:'nsis',
+                  arch:['x64']
+                },
+                {
+                  target:'portable',
+                  arch:['x64']
+                }
+              ],
+              artifactName:'Somoy-Sutra-AI-News-Editor-${version}-${arch}.${ext}'
+            },
+            nsis:{
+              oneClick:false,
+              allowToChangeInstallationDirectory:true,
+              createDesktopShortcut:true,
+              createStartMenuShortcut:true
+            }
+          };
+
+          fs.writeFileSync('package.json',JSON.stringify(p,null,2));
+          "
+
+      - name: Build Windows EXE
+        run: npm run electron:build
+
+      - name: Upload EXE files
+        uses: actions/upload-artifact@v4
+        with:
+          name: Somoy-Sutra-Windows
+          path: release/*
